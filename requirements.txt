@@ -1,5 +1,6 @@
 flask
 flask-cors
+flask-mail
 joblib
 numpy
 pandas
