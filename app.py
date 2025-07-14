@@ -21,7 +21,11 @@ gmail_user = os.getenv("MAIL_USERNAME")
 
 # Flask App Setup
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173"])
+CORS(app, origins=[
+    "http://localhost:5173", 
+    "https://dynamic-sunburst-5f73a6.netlify.app"
+])
+
 
 @app.before_request
 def log_request_info():
