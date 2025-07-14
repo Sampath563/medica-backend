@@ -21,16 +21,14 @@ gmail_user = os.getenv("MAIL_USERNAME")
 
 # Flask App Setup
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173"])  # <- Specific and safe
-
-# Configure CORS to allow frontend origin with proper headers
+CORS(app, origins=["http://localhost:5173"])
 
 @app.before_request
 def log_request_info():
     print(f"Request method: {request.method}, Path: {request.path}")
     if request.method == 'OPTIONS':
         print("Handling preflight OPTIONS request")
-        
+
 # Mail Config
 app.config.update(
     MAIL_SERVER=os.getenv("MAIL_SERVER"),
@@ -41,14 +39,14 @@ app.config.update(
     MAIL_USE_SSL=os.getenv("MAIL_USE_SSL", "False") == "True"
 )
 mail = Mail(app)
-        
+
 # MongoDB Setup
 mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 client = MongoClient(mongo_uri)
 db = client["medicalDB"]
 users = db["users"]
 
-# === 🔐 Auth & 2FA ===
+# === 🔐 Auth ===
 
 def generate_code():
     return str(np.random.randint(100000, 999999))
@@ -64,7 +62,7 @@ def send_verification_email(email, code):
 @app.route("/api/register", methods=["POST"])
 def register():
     try:
-        data = request.get_json(force=True)  # <-- 🔥 Add force=True
+        data = request.get_json(force=True)
         email = data.get("email")
         password = data.get("password")
 
@@ -80,7 +78,6 @@ def register():
     except Exception as e:
         print("Registration Error:", str(e))
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
-
 
 @app.route("/api/login-step1", methods=["POST"])
 def login_step1():
@@ -116,33 +113,24 @@ def login_step2():
     users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
     return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
 
-# === 🧠 Model + Prediction ===
-
-vectorizer = None
-scaler = None
-models = {}
+# === 🧠 ML Prediction ===
 
 def load_models():
-    global vectorizer, scaler, models
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    vectorizer = joblib.load(os.path.join(base_path, "models", "symptom_vectorizer.pkl"))
+    scaler = joblib.load(os.path.join(base_path, "models", "medical_scaler.pkl"))
+    logistic_model = joblib.load(os.path.join(base_path, "models", "best_medical_model_logistic_regression.pkl"))
+
+    ensemble_model = None
     try:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        vectorizer = joblib.load(os.path.join(base_path, "models", "symptom_vectorizer.pkl"))
-        scaler = joblib.load(os.path.join(base_path, "models", "medical_scaler.pkl"))
-        models['logistic'] = joblib.load(os.path.join(base_path, "models", "best_medical_model_logistic_regression.pkl"))
+        ensemble_model = joblib.load(os.path.join(base_path, "models", "ensemble_medical_model.pkl"))
+        print("✅ Ensemble model loaded")
+    except FileNotFoundError:
+        print("ℹ️ Ensemble model not found, skipping...")
 
-        try:
-            models['ensemble'] = joblib.load(os.path.join(base_path, "models", "ensemble_medical_model.pkl"))
-            print("✅ Ensemble model loaded")
-        except FileNotFoundError:
-            print("ℹ️ Ensemble model not found, skipping...")
+    return vectorizer, scaler, logistic_model, ensemble_model
 
-        print(f"✅ Vectorizer loaded with vocab size: {len(vectorizer.vocabulary_)}")
-        return True
-    except Exception as e:
-        print(f"❌ Error loading models: {e}")
-        return False
-
-def preprocess_input(data):
+def preprocess_input(data, vectorizer, scaler):
     try:
         symptom_text = data.get("symptoms", "")
         bp = data.get("blood_pressure", "0/0")
@@ -167,25 +155,25 @@ def preprocess_input(data):
         print(f"❌ Preprocessing error: {e}")
         return None
 
-load_models()
-
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
         data = request.get_json()
-        features = preprocess_input(data)
+        vectorizer, scaler, logistic_model, ensemble_model = load_models()
+
+        features = preprocess_input(data, vectorizer, scaler)
         if features is None:
             return jsonify({"error": "Invalid input"}), 400
 
         predictions = {}
-        if 'logistic' in models:
-            pred = models['logistic'].predict(features)[0]
-            prob = np.max(models['logistic'].predict_proba(features))
+        if logistic_model:
+            pred = logistic_model.predict(features)[0]
+            prob = np.max(logistic_model.predict_proba(features))
             predictions['logistic'] = {"prediction": pred, "confidence": float(prob)}
 
-        if 'ensemble' in models:
-            pred = models['ensemble'].predict(features)[0]
-            prob = np.max(models['ensemble'].predict_proba(features))
+        if ensemble_model:
+            pred = ensemble_model.predict(features)[0]
+            prob = np.max(ensemble_model.predict_proba(features))
             predictions['ensemble'] = {"prediction": pred, "confidence": float(prob)}
 
         return jsonify({"result": predictions})
@@ -205,5 +193,7 @@ def generate_treatment():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# === Start App on Render-Provided Port ===
 if __name__ == "__main__":
-    app.run(debug=True, port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(debug=False, host="0.0.0.0", port=port)
