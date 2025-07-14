@@ -60,8 +60,10 @@ def send_verification_email(email, code):
         msg = Message("Your Verification Code", sender=gmail_user, recipients=[email])
         msg.body = f"Your verification code is: {code}"
         mail.send(msg)
+        print(f"✅ Email sent to {email} with code {code}")  # ✅ ADD THIS
     except Exception as e:
-        print(f"❌ Email sending error: {e}")
+        print(f"❌ Email sending error: {e}")  # This helps you debug
+
 
 @app.route("/api/register", methods=["POST"])
 def register():
