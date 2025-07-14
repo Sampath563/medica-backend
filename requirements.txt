@@ -1,9 +1,8 @@
-fastapi
-uvicorn
+flask
+joblib
 numpy
 pandas
 scikit-learn
-joblib
 pickle-mixin==1.0.2
 setuptools
 wheel
