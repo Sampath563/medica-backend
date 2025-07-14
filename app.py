@@ -11,6 +11,9 @@ from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
 
+# ADD THIS
+import gdown
+
 # Load .env
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -25,7 +28,6 @@ CORS(app, origins=[
     "http://localhost:5173", 
     "https://dynamic-sunburst-5f73a6.netlify.app"
 ])
-
 
 @app.before_request
 def log_request_info():
@@ -60,10 +62,9 @@ def send_verification_email(email, code):
         msg = Message("Your Verification Code", sender=gmail_user, recipients=[email])
         msg.body = f"Your verification code is: {code}"
         mail.send(msg)
-        print(f"✅ Email sent to {email} with code {code}")  # ✅ ADD THIS
+        print(f"✅ Email sent to {email} with code {code}")
     except Exception as e:
-        print(f"❌ Email sending error: {e}")  # This helps you debug
-
+        print(f"❌ Email sending error: {e}")
 
 @app.route("/api/register", methods=["POST"])
 def register():
@@ -121,11 +122,37 @@ def login_step2():
 
 # === 🧠 ML Prediction ===
 
+# ⬇️ DOWNLOAD MODEL IF MISSING
+def download_model_from_drive():
+    model_path = "models/best_medical_model_logistic_regression.pkl"
+    if not os.path.exists(model_path):
+        print("⏬ Downloading model from Google Drive...")
+        file_id = "1FVNot5FfNOYe344ktmAvU_KacExAa-eB"  # ⬅️ REPLACE THIS WITH YOUR FILE ID
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, model_path, quiet=False)
+        print("✅ Model downloaded.")
+
 def load_models():
+    import gdown
+
     base_path = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(base_path, "models", "best_medical_model_logistic_regression.pkl")
+
+    # Google Drive file ID
+    file_id = "1FVNot5FfNOYe344ktmAvU_KacExAa-eB"
+    url = f"https://drive.google.com/uc?id={file_id}"
+
+    # Download if not already present
+    if not os.path.exists(model_path):
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        print("⬇️ Downloading model from Google Drive...")
+        gdown.download(url, model_path, quiet=False)
+        print("✅ Download complete.")
+
+    # Load model
     vectorizer = joblib.load(os.path.join(base_path, "models", "symptom_vectorizer.pkl"))
     scaler = joblib.load(os.path.join(base_path, "models", "medical_scaler.pkl"))
-    logistic_model = joblib.load(os.path.join(base_path, "models", "best_medical_model_logistic_regression.pkl"))
+    logistic_model = joblib.load(model_path)
 
     ensemble_model = None
     try:
@@ -135,6 +162,7 @@ def load_models():
         print("ℹ️ Ensemble model not found, skipping...")
 
     return vectorizer, scaler, logistic_model, ensemble_model
+
 
 def preprocess_input(data, vectorizer, scaler):
     try:
@@ -203,4 +231,3 @@ def generate_treatment():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
-
