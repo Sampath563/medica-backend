@@ -2,7 +2,7 @@ import os
 import joblib
 import numpy as np
 from flask import Flask, request, jsonify
-from flask_cors import CORS, cross_origin
+from flask_cors import CORS
 from flask_mail import Mail, Message
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -12,16 +12,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
 import gdown
 
-# === Load Environment Variables ===
+# === Load .env Variables ===
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 # === Flask Setup ===
 app = Flask(__name__)
 
-# ✅ Enable CORS for Netlify frontend
-CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}},
+# ✅ Enable proper CORS for Netlify frontend
+CORS(app,
+     origins=["https://dynamic-sunburst-5f73a6.netlify.app"],
      supports_credentials=True,
+     methods=["GET", "POST", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
 
 @app.after_request
@@ -55,7 +57,7 @@ try:
     client = MongoClient(mongo_uri)
     db = client["medicalDB"]
     users = db["users"]
-    users.count_documents({})  # test query
+    users.count_documents({})
     print("✅ MongoDB connected and users collection loaded")
 except Exception as e:
     print(f"❌ MongoDB collection access failed: {e}")
@@ -216,7 +218,6 @@ def preprocess_input(data, vectorizer, scaler):
         return None
 
 @app.route("/predict", methods=["POST"])
-@cross_origin(origins="https://dynamic-sunburst-5f73a6.netlify.app")
 def predict():
     try:
         data = request.get_json()
