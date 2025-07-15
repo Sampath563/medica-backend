@@ -82,22 +82,34 @@ def register():
 
 @app.route("/api/login-step1", methods=["POST"])
 def login_step1():
-    data = request.get_json()
-    email, password = data.get("email"), data.get("password")
-    user = users.find_one({"email": email})
+    try:
+        data = request.get_json(force=True)
+        print("Received login data:", data)
 
-    if not user or not check_password_hash(user["password"], password):
-        return jsonify({"message": "Invalid credentials"}), 401
+        email = data.get("email")
+        password = data.get("password")
 
-    code = generate_code()
-    expiry = datetime.utcnow() + timedelta(minutes=5)
-    users.update_one({"email": email}, {"$set": {
-        "verification_code": code,
-        "code_expiry": expiry
-    }})
+        if not email or not password:
+            return jsonify({"message": "Email and password required"}), 400
 
-    send_verification_email(email, code)
-    return jsonify({"message": "Verification code sent", "step": 2}), 200
+        user = users.find_one({"email": email})
+
+        if not user or not check_password_hash(user["password"], password):
+            return jsonify({"message": "Invalid credentials"}), 401
+
+        code = generate_code()
+        expiry = datetime.utcnow() + timedelta(minutes=5)
+        users.update_one({"email": email}, {"$set": {
+            "verification_code": code,
+            "code_expiry": expiry
+        }})
+
+        send_verification_email(email, code)
+        return jsonify({"message": "Verification code sent", "step": 2}), 200
+
+    except Exception as e:
+        print("❌ Login Step 1 Error:", str(e))
+        return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 @app.route("/api/login-step2", methods=["POST"])
 def login_step2():
@@ -220,6 +232,15 @@ def generate_treatment():
         return jsonify({"results": results})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ✅ MongoDB Test Endpoint
+@app.route("/api/ping-db", methods=["GET"])
+def ping_db():
+    try:
+        count = users.count_documents({})
+        return jsonify({"message": "MongoDB connected ✅", "user_count": count})
+    except Exception as e:
+        return jsonify({"error": f"MongoDB connection failed: {str(e)}"}), 500
 
 # Start app
 if __name__ == '__main__':
