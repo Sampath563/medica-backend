@@ -96,9 +96,10 @@ def register():
 def login_step1():
     try:
         data = request.get_json(force=True)
-        email, password = data.get("email"), data.get("password")
+        email = data.get("email")
+        password = data.get("password")
 
-        print(f"📥 Received login for: {email}")
+        print(f"📥 login-step1 received email: {email}, password: {password}")
 
         if not email or not password:
             return jsonify({"message": "Email and password required"}), 400
@@ -109,24 +110,26 @@ def login_step1():
             return jsonify({"message": "Invalid credentials"}), 401
 
         if not check_password_hash(user["password"], password):
-            print("❌ Password incorrect.")
+            print("❌ Incorrect password.")
             return jsonify({"message": "Invalid credentials"}), 401
 
         code = generate_code()
         expiry = datetime.utcnow() + timedelta(minutes=5)
 
-        users.update_one({"email": email}, {"$set": {
-            "verification_code": code,
-            "code_expiry": expiry
-        }})
+        users.update_one(
+            {"email": email},
+            {"$set": {"verification_code": code, "code_expiry": expiry}}
+        )
 
         send_verification_email(email, code)
-        print(f"✅ Verification code sent to {email}")
+
+        print(f"✅ Code sent to {email}")
         return jsonify({"message": "Verification code sent", "step": 2}), 200
 
     except Exception as e:
-        print(f"🔥 Login error: {e}")
+        print(f"🔥 Exception in login-step1: {str(e)}")
         return jsonify({"message": "Login failed", "error": str(e)}), 500
+
 
 @app.route("/api/login-step2", methods=["POST"])
 def login_step2():
