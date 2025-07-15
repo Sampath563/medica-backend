@@ -50,12 +50,8 @@ app.config.update(
 mail = Mail(app)
 
 # === MongoDB Setup ===
-mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-client = MongoClient(
-    mongo_uri,
-    serverSelectionTimeoutMS=5000
-)
-
+mongo_uri = os.getenv("MONGO_URI")
+client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
 
 db = client["medicalDB"]
 users = db["users"]
