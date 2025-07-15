@@ -85,19 +85,22 @@ def register():
         email = data.get("email")
         password = data.get("password")
 
-        print("📥 Registering user:", email)  # 👈 Add this for debug
+        print(f"📥 Received registration request: email={email}")
 
         if not email or not password:
+            print("⚠️ Missing email or password")
             return jsonify({"message": "Missing email or password"}), 400
 
         if users.find_one({"email": email}):
+            print("🚫 User already exists")
             return jsonify({"message": "User already exists"}), 400
 
         hashed_password = generate_password_hash(password)
         users.insert_one({"email": email, "password": hashed_password})
+        print("✅ Registration successful")
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
-        print(f"🔥 Register Exception: {e}")  # 👈 See this in logs
+        print(f"🔥 Exception in /api/register: {e}")  # <-- This will help
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 
