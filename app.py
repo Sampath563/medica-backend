@@ -93,7 +93,6 @@ def register():
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 @app.route("/api/login-step1", methods=["POST"])
-@app.route("/api/login-step1", methods=["POST"])
 def login_step1():
     try:
         print("🚨 login-step1 triggered")
