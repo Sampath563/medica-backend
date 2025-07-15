@@ -7,7 +7,7 @@ google-search-results
 joblib
 numpy
 pandas
-scikit-learn
+scikit-learn==1.6.1
 pickle-mixin==1.0.2
 setuptools
 wheel
