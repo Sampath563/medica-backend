@@ -93,41 +93,47 @@ def register():
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 @app.route("/api/login-step1", methods=["POST"])
+@app.route("/api/login-step1", methods=["POST"])
 def login_step1():
     try:
+        print("🚨 login-step1 triggered")
+
         data = request.get_json(force=True)
+        print("📥 Received data:", data)
+
         email = data.get("email")
         password = data.get("password")
 
-        print(f"📥 login-step1 received email: {email}, password: {password}")
-
         if not email or not password:
+            print("⚠️ Missing email or password")
             return jsonify({"message": "Email and password required"}), 400
 
         user = users.find_one({"email": email})
+        print("👤 User found in DB:", user)
+
         if not user:
-            print("❌ User not found.")
+            print("❌ User not found")
             return jsonify({"message": "Invalid credentials"}), 401
 
         if not check_password_hash(user["password"], password):
-            print("❌ Incorrect password.")
+            print("❌ Password mismatch")
             return jsonify({"message": "Invalid credentials"}), 401
 
         code = generate_code()
         expiry = datetime.utcnow() + timedelta(minutes=5)
 
-        users.update_one(
-            {"email": email},
-            {"$set": {"verification_code": code, "code_expiry": expiry}}
-        )
+        print("🔐 Generated code:", code)
+        users.update_one({"email": email}, {"$set": {
+            "verification_code": code,
+            "code_expiry": expiry
+        }})
 
         send_verification_email(email, code)
+        print("✅ Email sent")
 
-        print(f"✅ Code sent to {email}")
         return jsonify({"message": "Verification code sent", "step": 2}), 200
-
     except Exception as e:
-        print(f"🔥 Exception in login-step1: {str(e)}")
+        print("🔥 Exception occurred:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 
