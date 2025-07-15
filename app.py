@@ -85,6 +85,8 @@ def register():
         email = data.get("email")
         password = data.get("password")
 
+        print("📥 Registering user:", email)  # 👈 Add this for debug
+
         if not email or not password:
             return jsonify({"message": "Missing email or password"}), 400
 
@@ -95,7 +97,9 @@ def register():
         users.insert_one({"email": email, "password": hashed_password})
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
+        print(f"🔥 Register Exception: {e}")  # 👈 See this in logs
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
+
 
 @app.route("/api/login-step1", methods=["POST"])
 def login_step1():
