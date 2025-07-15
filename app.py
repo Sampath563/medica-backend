@@ -11,7 +11,6 @@ from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
 import gdown
-import ssl
 
 # === Load Environment Variables ===
 env_path = Path(__file__).parent / '.env'
@@ -20,16 +19,15 @@ load_dotenv(dotenv_path=env_path)
 # === Flask Setup ===
 app = Flask(__name__)
 
-# ✅ Enable CORS for all /api/* and /predict routes
-# Allow Netlify frontend
+# ✅ Enable CORS for Netlify frontend
 CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}},
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"])
+
 @app.after_request
 def after_request(response):
     print("🔍 Response headers:", response.headers)
     return response
-
 
 @app.before_request
 def log_request_info():
@@ -51,11 +49,23 @@ mail = Mail(app)
 
 # === MongoDB Setup ===
 mongo_uri = os.getenv("MONGO_URI")
+print("🔗 Connecting to MongoDB:", mongo_uri)
 
-client = MongoClient(mongo_uri)
+try:
+    client = MongoClient(mongo_uri)
+    db = client["medicalDB"]
+    users = db["users"]
+    print("✅ MongoDB connection initialized")
+except Exception as e:
+    print(f"❌ MongoDB connection failed: {e}")
+    users = None
 
-db = client["medicalDB"]
-users = db["users"]
+@app.route("/api/debug", methods=["GET"])
+def debug_info():
+    return jsonify({
+        "mongo_uri_loaded": mongo_uri is not None,
+        "users_collection_connected": users is not None
+    })
 
 # === Email Auth ===
 def generate_code():
@@ -89,80 +99,64 @@ def register():
         print(f"📥 Received registration request: email={email}")
 
         if not email or not password:
-            print("⚠️ Missing email or password")
             return jsonify({"message": "Missing email or password"}), 400
 
         if users.find_one({"email": email}):
-            print("🚫 User already exists")
             return jsonify({"message": "User already exists"}), 400
 
         hashed_password = generate_password_hash(password)
         users.insert_one({"email": email, "password": hashed_password})
-        print("✅ Registration successful")
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
-        print(f"🔥 Exception in /api/register: {e}")  # <-- This will help
+        print(f"🔥 Exception in /api/register: {e}")
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
-
 
 @app.route("/api/login-step1", methods=["POST"])
 def login_step1():
     try:
-        print("🚨 login-step1 triggered")
-
         data = request.get_json(force=True)
-        print("📥 Received data:", data)
-
         email = data.get("email")
         password = data.get("password")
 
         if not email or not password:
-            print("⚠️ Missing email or password")
             return jsonify({"message": "Email and password required"}), 400
 
         user = users.find_one({"email": email})
-        print("👤 User found in DB:", user)
-
-        if not user:
-            print("❌ User not found")
-            return jsonify({"message": "Invalid credentials"}), 401
-
-        if not check_password_hash(user["password"], password):
-            print("❌ Password mismatch")
+        if not user or not check_password_hash(user["password"], password):
             return jsonify({"message": "Invalid credentials"}), 401
 
         code = generate_code()
         expiry = datetime.utcnow() + timedelta(minutes=5)
 
-        print("🔐 Generated code:", code)
         users.update_one({"email": email}, {"$set": {
             "verification_code": code,
             "code_expiry": expiry
         }})
 
         send_verification_email(email, code)
-        print("✅ Email sent")
-
         return jsonify({"message": "Verification code sent", "step": 2}), 200
     except Exception as e:
-        print("🔥 Exception occurred:", e)
+        print("🔥 Exception occurred in login-step1:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
-
 
 @app.route("/api/login-step2", methods=["POST"])
 def login_step2():
-    data = request.get_json()
-    email, code = data.get("email"), data.get("code")
-    user = users.find_one({"email": email})
+    try:
+        data = request.get_json()
+        email, code = data.get("email"), data.get("code")
+        user = users.find_one({"email": email})
 
-    if not user or user.get("verification_code") != code:
-        return jsonify({"message": "Invalid verification code"}), 401
+        if not user or user.get("verification_code") != code:
+            return jsonify({"message": "Invalid verification code"}), 401
 
-    if datetime.utcnow() > user.get("code_expiry"):
-        return jsonify({"message": "Code expired"}), 401
+        if datetime.utcnow() > user.get("code_expiry"):
+            return jsonify({"message": "Code expired"}), 401
 
-    users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
-    return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
+        users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
+        return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
+    except Exception as e:
+        print("🔥 Exception in login-step2:", e)
+        return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 # === Model Utilities ===
 def download_model_if_missing(file_id, output_path):
@@ -224,8 +218,6 @@ def preprocess_input(data, vectorizer, scaler):
 def predict():
     try:
         data = request.get_json()
-        print("🔍 Predict Request:", data)
-
         vectorizer, scaler, logistic_model, ensemble_model = load_models()
         features = preprocess_input(data, vectorizer, scaler)
         if features is None:
