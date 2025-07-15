@@ -130,18 +130,24 @@ def load_models():
     # Google Drive file IDs
     logistic_id = "1JBOrSJtfZL7kKeOqOedi1e3cYMpSt2rd"
     ensemble_id = "15J6ieS97efmxGySE6c_9yMEbwZdMxpII"
+    scaler_id = "1aabdJ-DvGawM5vI-B9m69IuIqeNL5Re_"
+    vectorizer_id = "1lyr6Qnx3Wqr-fsWqaBQoTKra629Ac91x"
 
     # Paths
     logistic_path = os.path.join(base, "best_medical_model_logistic_regression.pkl")
     ensemble_path = os.path.join(base, "ensemble_medical_model.pkl")
+    scaler_path = os.path.join(base, "medical_scaler.pkl")
+    vectorizer_path = os.path.join(base, "symptom_vectorizer.pkl")
 
     # Download if missing
     download_model_if_missing(logistic_id, logistic_path)
     download_model_if_missing(ensemble_id, ensemble_path)
+    download_model_if_missing(scaler_id, scaler_path)
+    download_model_if_missing(vectorizer_id, vectorizer_path)
 
     # Load
-    vectorizer = joblib.load(os.path.join(base, "symptom_vectorizer.pkl"))
-    scaler = joblib.load(os.path.join(base, "medical_scaler.pkl"))
+    vectorizer = joblib.load(vectorizer_path)
+    scaler = joblib.load(scaler_path)
     logistic_model = joblib.load(logistic_path)
 
     ensemble_model = None
