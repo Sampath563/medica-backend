@@ -71,7 +71,7 @@ def send_verification_email(email, code):
 @app.route("/api/test-email", methods=["GET"])
 def test_email():
     try:
-        send_verification_email("youremail@gmail.com", "999999")
+        send_verification_email("bsampath563@gmail.com", "999999")
         return jsonify({"message": "Test email sent ✅"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
