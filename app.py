@@ -174,9 +174,14 @@ def load_models():
     download_model_if_missing(vectorizer_id, vectorizer_path)
 
     # Load
-    vectorizer = joblib.load(vectorizer_path)
-    scaler = joblib.load(scaler_path)
-    logistic_model = joblib.load(logistic_path)
+    try:
+        vectorizer = joblib.load(vectorizer_path)
+        scaler = joblib.load(scaler_path)
+        logistic_model = joblib.load(logistic_path)
+    except Exception as e:
+        print(f"❌ Model loading error: {e}")
+        raise
+
 
     ensemble_model = None
     try:
@@ -216,10 +221,14 @@ def preprocess_input(data, vectorizer, scaler):
 def predict():
     try:
         data = request.get_json()
+        print("🔍 Predict request data:", data)  # Added for debugging
+
         vectorizer, scaler, logistic_model, ensemble_model = load_models()
         features = preprocess_input(data, vectorizer, scaler)
+
         if features is None:
-            return jsonify({"error": "Invalid input"}), 400
+            print("❌ Feature extraction returned None")
+            return jsonify({"error": "Invalid input or preprocessing failed"}), 400
 
         predictions = {}
         if logistic_model:
@@ -234,7 +243,9 @@ def predict():
 
         return jsonify({"result": predictions})
     except Exception as e:
+        print("❌ Predict Error:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/treatment", methods=["POST"])
 def generate_treatment():
