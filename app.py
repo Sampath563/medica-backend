@@ -53,10 +53,9 @@ mail = Mail(app)
 mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 client = MongoClient(
     mongo_uri,
-    tls=True,
-    ssl_cert_reqs=ssl.CERT_NONE,  # ✅ disables SSL verification
     serverSelectionTimeoutMS=5000
 )
+
 
 db = client["medicalDB"]
 users = db["users"]
