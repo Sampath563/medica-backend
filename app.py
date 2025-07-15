@@ -18,10 +18,16 @@ load_dotenv(dotenv_path=env_path)
 
 # Flask setup
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": [
+CORS(app, resources={r"/*": {"origins": [
     "http://localhost:5173",
     "https://dynamic-sunburst-5f73a6.netlify.app"
 ]}}, supports_credentials=True)
+
+@app.after_request
+def apply_cors_headers(response):
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
 @app.before_request
 def log_request_info():
@@ -58,17 +64,16 @@ def send_verification_email(email, code):
         mail.send(msg)
         print(f"✅ Email sent to {email} with code {code}")
     except Exception as e:
-        print(f"❌ Email sending error: {e}")
-        raise e  # propagate error for response logging
+        print(f"❌ Email sending failed: {e}")
+        raise Exception("Email sending failed. Check credentials and allow less secure apps or use App Password.")
 
 @app.route("/api/test-email", methods=["GET"])
 def test_email():
     try:
-        send_verification_email("bsampath563@gmail.com", "123456")
+        send_verification_email("youremail@gmail.com", "999999")
         return jsonify({"message": "Test email sent ✅"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @app.route("/api/register", methods=["POST"])
 def register():
