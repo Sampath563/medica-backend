@@ -12,16 +12,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
 import gdown
 
-# Load environment variables
+# === Load Environment Variables ===
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-# Flask setup
+# === Flask Setup ===
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": [
-    "http://localhost:5173",
-    "https://dynamic-sunburst-5f73a6.netlify.app"
-]}}, supports_credentials=True)
+CORS(app, origins=["https://dynamic-sunburst-5f73a6.netlify.app"])
 
 @app.after_request
 def apply_cors_headers(response):
@@ -31,11 +28,11 @@ def apply_cors_headers(response):
 
 @app.before_request
 def log_request_info():
-    print(f"Request method: {request.method}, Path: {request.path}")
+    print(f"➡️ {request.method} {request.path}")
     if request.method == 'OPTIONS':
-        print("Handling preflight OPTIONS request")
+        print("🔄 Handling preflight OPTIONS request")
 
-# Mail configuration
+# === Mail Configuration ===
 gmail_user = os.getenv("MAIL_USERNAME")
 app.config.update(
     MAIL_SERVER=os.getenv("MAIL_SERVER"),
@@ -47,14 +44,13 @@ app.config.update(
 )
 mail = Mail(app)
 
-# MongoDB configuration
+# === MongoDB Setup ===
 mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 client = MongoClient(mongo_uri)
 db = client["medicalDB"]
 users = db["users"]
 
-
-# === Auth ===
+# === Email Auth ===
 def generate_code():
     return str(np.random.randint(100000, 999999))
 
@@ -65,8 +61,8 @@ def send_verification_email(email, code):
         mail.send(msg)
         print(f"✅ Email sent to {email} with code {code}")
     except Exception as e:
-        print(f"❌ Email sending failed: {e}")
-        raise Exception("Email sending failed. Check credentials and allow less secure apps or use App Password.")
+        print(f"❌ Email failed: {e}")
+        raise
 
 @app.route("/api/test-email", methods=["GET"])
 def test_email():
@@ -93,23 +89,18 @@ def register():
         users.insert_one({"email": email, "password": hashed_password})
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
-        print("Registration Error:", str(e))
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 @app.route("/api/login-step1", methods=["POST"])
 def login_step1():
     try:
         data = request.get_json(force=True)
-        print("Received login data:", data)
-
-        email = data.get("email")
-        password = data.get("password")
+        email, password = data.get("email"), data.get("password")
 
         if not email or not password:
             return jsonify({"message": "Email and password required"}), 400
 
         user = users.find_one({"email": email})
-
         if not user or not check_password_hash(user["password"], password):
             return jsonify({"message": "Invalid credentials"}), 401
 
@@ -122,9 +113,7 @@ def login_step1():
 
         send_verification_email(email, code)
         return jsonify({"message": "Verification code sent", "step": 2}), 200
-
     except Exception as e:
-        print("❌ Login Step 1 Error:", str(e))
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 @app.route("/api/login-step2", methods=["POST"])
@@ -142,8 +131,7 @@ def login_step2():
     users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
     return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
 
-# === ML Models ===
-
+# === Model Utilities ===
 def download_model_if_missing(file_id, output_path):
     if not os.path.exists(output_path):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -154,47 +142,29 @@ def download_model_if_missing(file_id, output_path):
 
 def load_models():
     base = os.path.join(os.path.dirname(__file__), "models")
+    paths = {
+        "logistic": ("1JBOrSJtfZL7kKeOqOedi1e3cYMpSt2rd", os.path.join(base, "best_medical_model_logistic_regression.pkl")),
+        "ensemble": ("15J6ieS97efmxGySE6c_9yMEbwZdMxpII", os.path.join(base, "ensemble_medical_model.pkl")),
+        "scaler": ("1aabdJ-DvGawM5vI-B9m69IuIqeNL5Re_", os.path.join(base, "medical_scaler.pkl")),
+        "vectorizer": ("1lyr6Qnx3Wqr-fsWqaBQoTKra629Ac91x", os.path.join(base, "symptom_vectorizer.pkl")),
+    }
 
-    # Google Drive file IDs
-    logistic_id = "1JBOrSJtfZL7kKeOqOedi1e3cYMpSt2rd"
-    ensemble_id = "15J6ieS97efmxGySE6c_9yMEbwZdMxpII"
-    scaler_id = "1aabdJ-DvGawM5vI-B9m69IuIqeNL5Re_"
-    vectorizer_id = "1lyr6Qnx3Wqr-fsWqaBQoTKra629Ac91x"
+    for file_id, path in paths.values():
+        download_model_if_missing(file_id, path)
 
-    # Paths
-    logistic_path = os.path.join(base, "best_medical_model_logistic_regression.pkl")
-    ensemble_path = os.path.join(base, "ensemble_medical_model.pkl")
-    scaler_path = os.path.join(base, "medical_scaler.pkl")
-    vectorizer_path = os.path.join(base, "symptom_vectorizer.pkl")
-
-    # Download if missing
-    download_model_if_missing(logistic_id, logistic_path)
-    download_model_if_missing(ensemble_id, ensemble_path)
-    download_model_if_missing(scaler_id, scaler_path)
-    download_model_if_missing(vectorizer_id, vectorizer_path)
-
-    # Load
     try:
-        vectorizer = joblib.load(vectorizer_path)
-        scaler = joblib.load(scaler_path)
-        logistic_model = joblib.load(logistic_path)
+        vectorizer = joblib.load(paths["vectorizer"][1])
+        scaler = joblib.load(paths["scaler"][1])
+        logistic_model = joblib.load(paths["logistic"][1])
+        ensemble_model = joblib.load(paths["ensemble"][1])
+        return vectorizer, scaler, logistic_model, ensemble_model
     except Exception as e:
         print(f"❌ Model loading error: {e}")
         raise
 
-
-    ensemble_model = None
-    try:
-        ensemble_model = joblib.load(ensemble_path)
-        print("✅ Ensemble model loaded")
-    except Exception as e:
-        print(f"ℹ️ Ensemble model not found: {e}")
-
-    return vectorizer, scaler, logistic_model, ensemble_model
-
 def preprocess_input(data, vectorizer, scaler):
     try:
-        symptom_text = data.get("symptoms", "")
+        symptoms = data.get("symptoms", "")
         bp = data.get("blood_pressure", "0/0")
         try:
             sys, dia = map(int, bp.split("/"))
@@ -210,7 +180,7 @@ def preprocess_input(data, vectorizer, scaler):
             float(data.get("oxygen_saturation", 0))
         ]
 
-        symptom_vec = vectorizer.transform([symptom_text])
+        symptom_vec = vectorizer.transform([symptoms])
         vital_vec = scaler.transform([vitals])
         return np.hstack([symptom_vec.toarray(), vital_vec])
     except Exception as e:
@@ -221,31 +191,28 @@ def preprocess_input(data, vectorizer, scaler):
 def predict():
     try:
         data = request.get_json()
-        print("🔍 Predict request data:", data)  # Added for debugging
+        print("🔍 Predict Request:", data)
 
         vectorizer, scaler, logistic_model, ensemble_model = load_models()
         features = preprocess_input(data, vectorizer, scaler)
-
         if features is None:
-            print("❌ Feature extraction returned None")
-            return jsonify({"error": "Invalid input or preprocessing failed"}), 400
+            return jsonify({"error": "Invalid input"}), 400
 
         predictions = {}
         if logistic_model:
             pred = logistic_model.predict(features)[0]
             prob = np.max(logistic_model.predict_proba(features))
-            predictions['logistic'] = {"prediction": pred, "confidence": float(prob)}
+            predictions["logistic"] = {"prediction": pred, "confidence": float(prob)}
 
         if ensemble_model:
             pred = ensemble_model.predict(features)[0]
             prob = np.max(ensemble_model.predict_proba(features))
-            predictions['ensemble'] = {"prediction": pred, "confidence": float(prob)}
+            predictions["ensemble"] = {"prediction": pred, "confidence": float(prob)}
 
         return jsonify({"result": predictions})
     except Exception as e:
-        print("❌ Predict Error:", str(e))
+        print(f"❌ Prediction error: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 @app.route("/api/treatment", methods=["POST"])
 def generate_treatment():
@@ -260,7 +227,6 @@ def generate_treatment():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ✅ MongoDB Test Endpoint
 @app.route("/api/ping-db", methods=["GET"])
 def ping_db():
     try:
@@ -269,7 +235,6 @@ def ping_db():
     except Exception as e:
         return jsonify({"error": f"MongoDB connection failed: {str(e)}"}), 500
 
-# Start app
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
