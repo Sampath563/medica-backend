@@ -51,7 +51,8 @@ mail = Mail(app)
 
 # === MongoDB Setup ===
 mongo_uri = os.getenv("MONGO_URI")
-client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+
+client = MongoClient(mongo_uri)
 
 db = client["medicalDB"]
 users = db["users"]
