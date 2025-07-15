@@ -55,10 +55,12 @@ try:
     client = MongoClient(mongo_uri)
     db = client["medicalDB"]
     users = db["users"]
-    print("✅ MongoDB connection initialized")
+    users.count_documents({})  # test query
+    print("✅ MongoDB connected and users collection loaded")
 except Exception as e:
-    print(f"❌ MongoDB connection failed: {e}")
+    print(f"❌ MongoDB collection access failed: {e}")
     users = None
+
 
 @app.route("/api/debug", methods=["GET"])
 def debug_info():
