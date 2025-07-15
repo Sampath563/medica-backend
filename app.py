@@ -2,7 +2,7 @@ import os
 import joblib
 import numpy as np
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from flask_mail import Mail, Message
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -60,7 +60,6 @@ try:
 except Exception as e:
     print(f"❌ MongoDB collection access failed: {e}")
     users = None
-
 
 @app.route("/api/debug", methods=["GET"])
 def debug_info():
@@ -217,6 +216,7 @@ def preprocess_input(data, vectorizer, scaler):
         return None
 
 @app.route("/predict", methods=["POST"])
+@cross_origin(origins="https://dynamic-sunburst-5f73a6.netlify.app")
 def predict():
     try:
         data = request.get_json()
