@@ -11,6 +11,7 @@ from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
 import gdown
+from urllib.parse import quote_plus
 
 # === Load .env Variables ===
 env_path = Path(__file__).parent / '.env'
@@ -19,7 +20,6 @@ load_dotenv(dotenv_path=env_path)
 # === Flask Setup ===
 app = Flask(__name__)
 
-# ✅ Enable proper CORS for Netlify frontend
 CORS(app,
      origins=["https://dynamic-sunburst-5f73a6.netlify.app"],
      supports_credentials=True,
@@ -50,7 +50,11 @@ app.config.update(
 mail = Mail(app)
 
 # === MongoDB Setup ===
-mongo_uri = os.getenv("MONGO_URI")
+raw_user = os.getenv("MONGO_USER")
+raw_pass = os.getenv("MONGO_PASS")
+safe_user = quote_plus(raw_user)
+safe_pass = quote_plus(raw_pass)
+mongo_uri = f"mongodb+srv://{safe_user}:{safe_pass}@cluster3.d62mpwa.mongodb.net/medicalDB?retryWrites=true&w=majority&tls=true"
 print("🔗 Connecting to MongoDB:", mongo_uri)
 
 try:
@@ -98,8 +102,6 @@ def register():
         data = request.get_json(force=True)
         email = data.get("email")
         password = data.get("password")
-
-        print(f"📥 Received registration request: email={email}")
 
         if not email or not password:
             return jsonify({"message": "Missing email or password"}), 400
