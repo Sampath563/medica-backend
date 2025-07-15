@@ -10,22 +10,16 @@ from pathlib import Path
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
-
-# ADD THIS
 import gdown
 
-# Load .env
+# Load environment variables
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-# API Keys and Mail
-serpapi_key = os.getenv('SERPAPI_KEY')
-gmail_user = os.getenv("MAIL_USERNAME")
-
-# Flask App Setup
+# Flask setup
 app = Flask(__name__)
 CORS(app, origins=[
-    "http://localhost:5173", 
+    "http://localhost:5173",
     "https://dynamic-sunburst-5f73a6.netlify.app"
 ])
 
@@ -35,7 +29,8 @@ def log_request_info():
     if request.method == 'OPTIONS':
         print("Handling preflight OPTIONS request")
 
-# Mail Config
+# Mail configuration
+gmail_user = os.getenv("MAIL_USERNAME")
 app.config.update(
     MAIL_SERVER=os.getenv("MAIL_SERVER"),
     MAIL_PORT=int(os.getenv("MAIL_PORT", 587)),
@@ -46,14 +41,13 @@ app.config.update(
 )
 mail = Mail(app)
 
-# MongoDB Setup
+# MongoDB configuration
 mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 client = MongoClient(mongo_uri)
 db = client["medicalDB"]
 users = db["users"]
 
-# === 🔐 Auth ===
-
+# === Auth ===
 def generate_code():
     return str(np.random.randint(100000, 999999))
 
@@ -120,49 +114,44 @@ def login_step2():
     users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
     return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
 
-# === 🧠 ML Prediction ===
+# === ML Models ===
 
-# ⬇️ DOWNLOAD MODEL IF MISSING
-def download_model_from_drive():
-    model_path = "models/best_medical_model_logistic_regression.pkl"
-    if not os.path.exists(model_path):
-        print("⏬ Downloading model from Google Drive...")
-        file_id = "1FVNot5FfNOYe344ktmAvU_KacExAa-eB"  # ⬅️ REPLACE THIS WITH YOUR FILE ID
+def download_model_if_missing(file_id, output_path):
+    if not os.path.exists(output_path):
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         url = f"https://drive.google.com/uc?id={file_id}"
-        gdown.download(url, model_path, quiet=False)
-        print("✅ Model downloaded.")
+        print(f"⬇️ Downloading {output_path}...")
+        gdown.download(url, output_path, quiet=False)
+        print(f"✅ Downloaded {output_path}")
 
 def load_models():
-    import gdown
+    base = os.path.join(os.path.dirname(__file__), "models")
 
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(base_path, "models", "best_medical_model_logistic_regression.pkl")
+    # Google Drive file IDs
+    logistic_id = "1JBOrSJtfZL7kKeOqOedi1e3cYMpSt2rd"
+    ensemble_id = "15J6ieS97efmxGySE6c_9yMEbwZdMxpII"
 
-    # Google Drive file ID
-    file_id = "1FVNot5FfNOYe344ktmAvU_KacExAa-eB"
-    url = f"https://drive.google.com/uc?id={file_id}"
+    # Paths
+    logistic_path = os.path.join(base, "best_medical_model_logistic_regression.pkl")
+    ensemble_path = os.path.join(base, "ensemble_medical_model.pkl")
 
-    # Download if not already present
-    if not os.path.exists(model_path):
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        print("⬇️ Downloading model from Google Drive...")
-        gdown.download(url, model_path, quiet=False)
-        print("✅ Download complete.")
+    # Download if missing
+    download_model_if_missing(logistic_id, logistic_path)
+    download_model_if_missing(ensemble_id, ensemble_path)
 
-    # Load model
-    vectorizer = joblib.load(os.path.join(base_path, "models", "symptom_vectorizer.pkl"))
-    scaler = joblib.load(os.path.join(base_path, "models", "medical_scaler.pkl"))
-    logistic_model = joblib.load(model_path)
+    # Load
+    vectorizer = joblib.load(os.path.join(base, "symptom_vectorizer.pkl"))
+    scaler = joblib.load(os.path.join(base, "medical_scaler.pkl"))
+    logistic_model = joblib.load(logistic_path)
 
     ensemble_model = None
     try:
-        ensemble_model = joblib.load(os.path.join(base_path, "models", "ensemble_medical_model.pkl"))
+        ensemble_model = joblib.load(ensemble_path)
         print("✅ Ensemble model loaded")
-    except FileNotFoundError:
-        print("ℹ️ Ensemble model not found, skipping...")
+    except Exception as e:
+        print(f"ℹ️ Ensemble model not found: {e}")
 
     return vectorizer, scaler, logistic_model, ensemble_model
-
 
 def preprocess_input(data, vectorizer, scaler):
     try:
@@ -194,7 +183,6 @@ def predict():
     try:
         data = request.get_json()
         vectorizer, scaler, logistic_model, ensemble_model = load_models()
-
         features = preprocess_input(data, vectorizer, scaler)
         if features is None:
             return jsonify({"error": "Invalid input"}), 400
@@ -227,7 +215,7 @@ def generate_treatment():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# === Start App on Render-Provided Port ===
+# Start app
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
