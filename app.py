@@ -20,10 +20,11 @@ load_dotenv(dotenv_path=env_path)
 app = Flask(__name__)
 
 # ✅ Enable CORS for all /api/* and /predict routes
-CORS(app, resources={
-    r"/api/*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"},
-    r"/predict": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}
-}, supports_credentials=True)
+from flask_cors import CORS
+
+# Allow Netlify frontend
+CORS(app, origins="https://dynamic-sunburst-5f73a6.netlify.app", supports_credentials=True)
+
 
 @app.before_request
 def log_request_info():
