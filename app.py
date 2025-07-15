@@ -59,6 +59,16 @@ def send_verification_email(email, code):
         print(f"✅ Email sent to {email} with code {code}")
     except Exception as e:
         print(f"❌ Email sending error: {e}")
+        raise e  # propagate error for response logging
+
+@app.route("/api/test-email", methods=["GET"])
+def test_email():
+    try:
+        send_verification_email("bsampath563@gmail.com", "123456")
+        return jsonify({"message": "Test email sent ✅"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/register", methods=["POST"])
 def register():
