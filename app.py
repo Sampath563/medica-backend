@@ -47,7 +47,13 @@ mail = Mail(app)
 
 # === MongoDB Setup ===
 mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-client = MongoClient(mongo_uri, tls=True)
+client = MongoClient(
+    mongo_uri,
+    tls=True,
+    tlsAllowInvalidCertificates=True,  # <-- add this only temporarily if needed
+    serverSelectionTimeoutMS=5000
+)
+
 db = client["medicalDB"]
 users = db["users"]
 
