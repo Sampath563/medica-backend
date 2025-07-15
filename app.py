@@ -21,7 +21,14 @@ app = Flask(__name__)
 
 # ✅ Enable CORS for all /api/* and /predict routes
 # Allow Netlify frontend
-CORS(app, origins=["https://dynamic-sunburst-5f73a6.netlify.app"], supports_credentials=True)
+CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}},
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"])
+@app.after_request
+def after_request(response):
+    print("🔍 Response headers:", response.headers)
+    return response
+
 
 @app.before_request
 def log_request_info():
