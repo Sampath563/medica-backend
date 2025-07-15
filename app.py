@@ -18,14 +18,7 @@ load_dotenv(dotenv_path=env_path)
 
 # === Flask Setup ===
 app = Flask(__name__)
-CORS(app, origins=["https://dynamic-sunburst-5f73a6.netlify.app"], supports_credentials=True)
-
-@app.after_request
-def apply_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "https://dynamic-sunburst-5f73a6.netlify.app"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    return response
+CORS(app, resources={r"/api/*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}}, supports_credentials=True)
 
 @app.before_request
 def log_request_info():
