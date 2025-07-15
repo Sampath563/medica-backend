@@ -11,6 +11,7 @@ from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
 import gdown
+import ssl
 
 # === Load Environment Variables ===
 env_path = Path(__file__).parent / '.env'
@@ -53,7 +54,7 @@ mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 client = MongoClient(
     mongo_uri,
     tls=True,
-    tlsAllowInvalidCertificates=True,  # <-- add this only temporarily if needed
+    ssl_cert_reqs=ssl.CERT_NONE,  # ✅ disables SSL verification
     serverSelectionTimeoutMS=5000
 )
 
