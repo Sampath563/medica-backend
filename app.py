@@ -18,10 +18,10 @@ load_dotenv(dotenv_path=env_path)
 
 # Flask setup
 app = Flask(__name__)
-CORS(app, origins=[
+CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:5173",
     "https://dynamic-sunburst-5f73a6.netlify.app"
-])
+]}}, supports_credentials=True)
 
 @app.before_request
 def log_request_info():
