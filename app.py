@@ -1,4 +1,3 @@
-# === Imports ===
 import os
 import joblib
 import numpy as np
@@ -12,18 +11,17 @@ from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
 import gdown
-from urllib.parse import quote_plus
 
-# === Load .env ===
+# === Load Environment Variables ===
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
+# === Flask Setup ===
 app = Flask(__name__)
 
-CORS(app,
-     origins=["https://dynamic-sunburst-5f73a6.netlify.app"],
+# ✅ Enable CORS for Netlify frontend
+CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}},
      supports_credentials=True,
-     methods=["GET", "POST", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
 
 @app.after_request
@@ -37,7 +35,7 @@ def log_request_info():
     if request.method == 'OPTIONS':
         print("🔄 Handling preflight OPTIONS request")
 
-# === Mail Config ===
+# === Mail Configuration ===
 gmail_user = os.getenv("MAIL_USERNAME")
 app.config.update(
     MAIL_SERVER=os.getenv("MAIL_SERVER"),
@@ -49,23 +47,20 @@ app.config.update(
 )
 mail = Mail(app)
 
-# === MongoDB ===
-raw_user = os.getenv("MONGO_USER")
-raw_pass = os.getenv("MONGO_PASS")
-safe_user = quote_plus(raw_user)
-safe_pass = quote_plus(raw_pass)
-mongo_uri = f"mongodb+srv://{safe_user}:{safe_pass}@cluster3.d62mpwa.mongodb.net/medicalDB?retryWrites=true&w=majority&tls=true"
+# === MongoDB Setup ===
+mongo_uri = os.getenv("MONGO_URI")
 print("🔗 Connecting to MongoDB:", mongo_uri)
 
 try:
     client = MongoClient(mongo_uri)
     db = client["medicalDB"]
     users = db["users"]
-    users.count_documents({})
+    users.count_documents({})  # test query
     print("✅ MongoDB connected and users collection loaded")
 except Exception as e:
     print(f"❌ MongoDB collection access failed: {e}")
     users = None
+
 
 @app.route("/api/debug", methods=["GET"])
 def debug_info():
@@ -102,6 +97,8 @@ def register():
         data = request.get_json(force=True)
         email = data.get("email")
         password = data.get("password")
+
+        print(f"📥 Received registration request: email={email}")
 
         if not email or not password:
             return jsonify({"message": "Missing email or password"}), 400
@@ -163,9 +160,7 @@ def login_step2():
         print("🔥 Exception in login-step2:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
-# === Model Handling ===
-cached_models = {}
-
+# === Model Utilities ===
 def download_model_if_missing(file_id, output_path):
     if not os.path.exists(output_path):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -174,15 +169,7 @@ def download_model_if_missing(file_id, output_path):
         gdown.download(url, output_path, quiet=False)
         print(f"✅ Downloaded {output_path}")
 
-def load_models_once():
-    if cached_models:
-        return (
-            cached_models["vectorizer"],
-            cached_models["scaler"],
-            cached_models["logistic_model"],
-            cached_models["ensemble_model"]
-        )
-
+def load_models():
     base = os.path.join(os.path.dirname(__file__), "models")
     paths = {
         "logistic": ("1JBOrSJtfZL7kKeOqOedi1e3cYMpSt2rd", os.path.join(base, "best_medical_model_logistic_regression.pkl")),
@@ -195,21 +182,14 @@ def load_models_once():
         download_model_if_missing(file_id, path)
 
     try:
-        cached_models["vectorizer"] = joblib.load(paths["vectorizer"][1])
-        cached_models["scaler"] = joblib.load(paths["scaler"][1])
-        cached_models["logistic_model"] = joblib.load(paths["logistic"][1])
-        cached_models["ensemble_model"] = joblib.load(paths["ensemble"][1])
-        print("✅ Models loaded into memory")
+        vectorizer = joblib.load(paths["vectorizer"][1])
+        scaler = joblib.load(paths["scaler"][1])
+        logistic_model = joblib.load(paths["logistic"][1])
+        ensemble_model = joblib.load(paths["ensemble"][1])
+        return vectorizer, scaler, logistic_model, ensemble_model
     except Exception as e:
         print(f"❌ Model loading error: {e}")
         raise
-
-    return (
-        cached_models["vectorizer"],
-        cached_models["scaler"],
-        cached_models["logistic_model"],
-        cached_models["ensemble_model"]
-    )
 
 def preprocess_input(data, vectorizer, scaler):
     try:
@@ -240,7 +220,7 @@ def preprocess_input(data, vectorizer, scaler):
 def predict():
     try:
         data = request.get_json()
-        vectorizer, scaler, logistic_model, ensemble_model = load_models_once()
+        vectorizer, scaler, logistic_model, ensemble_model = load_models()
         features = preprocess_input(data, vectorizer, scaler)
         if features is None:
             return jsonify({"error": "Invalid input"}), 400
@@ -284,5 +264,4 @@ def ping_db():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    load_models_once()  # Load ensemble and others once at startup
     app.run(host='0.0.0.0', port=port)
