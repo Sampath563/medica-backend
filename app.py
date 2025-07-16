@@ -10,7 +10,7 @@ from pathlib import Path
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
-import gdown
+from huggingface_hub import hf_hub_download
 
 # === Load Environment Variables ===
 env_path = Path(__file__).parent / '.env'
@@ -55,12 +55,15 @@ try:
     client = MongoClient(mongo_uri)
     db = client["medicalDB"]
     users = db["users"]
-    users.count_documents({})  # test query
+    users.count_documents({})
     print("✅ MongoDB connected and users collection loaded")
 except Exception as e:
     print(f"❌ MongoDB collection access failed: {e}")
     users = None
 
+@app.route("/")
+def home():
+    return "✅ Medica backend running on Hugging Face Spaces"
 
 @app.route("/api/debug", methods=["GET"])
 def debug_info():
@@ -98,8 +101,6 @@ def register():
         email = data.get("email")
         password = data.get("password")
 
-        print(f"📥 Received registration request: email={email}")
-
         if not email or not password:
             return jsonify({"message": "Missing email or password"}), 400
 
@@ -110,7 +111,6 @@ def register():
         users.insert_one({"email": email, "password": hashed_password})
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
-        print(f"🔥 Exception in /api/register: {e}")
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 @app.route("/api/login-step1", methods=["POST"])
@@ -119,9 +119,6 @@ def login_step1():
         data = request.get_json(force=True)
         email = data.get("email")
         password = data.get("password")
-
-        if not email or not password:
-            return jsonify({"message": "Email and password required"}), 400
 
         user = users.find_one({"email": email})
         if not user or not check_password_hash(user["password"], password):
@@ -138,7 +135,6 @@ def login_step1():
         send_verification_email(email, code)
         return jsonify({"message": "Verification code sent", "step": 2}), 200
     except Exception as e:
-        print("🔥 Exception occurred in login-step1:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 @app.route("/api/login-step2", methods=["POST"])
@@ -157,42 +153,27 @@ def login_step2():
         users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
         return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
     except Exception as e:
-        print("🔥 Exception in login-step2:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
-# === Model Utilities ===
-def download_model_if_missing(file_id, output_path):
-    if not os.path.exists(output_path):
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        url = f"https://drive.google.com/uc?id={file_id}"
-        print(f"⬇️ Downloading {output_path}...")
-        gdown.download(url, output_path, quiet=False)
-        print(f"✅ Downloaded {output_path}")
+# === Load models from Hugging Face ===
+os.environ["HF_HOME"] = "/tmp"
 
-def load_models():
-    base = os.path.join(os.path.dirname(__file__), "models")
-    paths = {
-        "logistic": ("1JBOrSJtfZL7kKeOqOedi1e3cYMpSt2rd", os.path.join(base, "best_medical_model_logistic_regression.pkl")),
-        "ensemble": ("15J6ieS97efmxGySE6c_9yMEbwZdMxpII", os.path.join(base, "ensemble_medical_model.pkl")),
-        "scaler": ("1aabdJ-DvGawM5vI-B9m69IuIqeNL5Re_", os.path.join(base, "medical_scaler.pkl")),
-        "vectorizer": ("1lyr6Qnx3Wqr-fsWqaBQoTKra629Ac91x", os.path.join(base, "symptom_vectorizer.pkl")),
-    }
+def load_model_from_hub(filename):
+    print(f"📅 Loading {filename}...")
+    path = hf_hub_download(repo_id="Sampath563/medica-model", filename=filename, cache_dir="/tmp")
+    model = joblib.load(path)
+    print(f"✅ Loaded {filename}")
+    return model
 
-    for file_id, path in paths.values():
-        download_model_if_missing(file_id, path)
+vectorizer = load_model_from_hub("symptom_vectorizer.pkl")
+scaler = load_model_from_hub("medical_scaler.pkl")
+logistic_model = load_model_from_hub("best_medical_model_logistic_regression.pkl")
+ensemble_model = load_model_from_hub("ensemble_medical_model.pkl")
 
+@app.route("/predict", methods=["POST"])
+def predict():
     try:
-        vectorizer = joblib.load(paths["vectorizer"][1])
-        scaler = joblib.load(paths["scaler"][1])
-        logistic_model = joblib.load(paths["logistic"][1])
-        ensemble_model = joblib.load(paths["ensemble"][1])
-        return vectorizer, scaler, logistic_model, ensemble_model
-    except Exception as e:
-        print(f"❌ Model loading error: {e}")
-        raise
-
-def preprocess_input(data, vectorizer, scaler):
-    try:
+        data = request.get_json()
         symptoms = data.get("symptoms", "")
         bp = data.get("blood_pressure", "0/0")
         try:
@@ -211,19 +192,7 @@ def preprocess_input(data, vectorizer, scaler):
 
         symptom_vec = vectorizer.transform([symptoms])
         vital_vec = scaler.transform([vitals])
-        return np.hstack([symptom_vec.toarray(), vital_vec])
-    except Exception as e:
-        print(f"❌ Preprocessing error: {e}")
-        return None
-
-@app.route("/predict", methods=["POST"])
-def predict():
-    try:
-        data = request.get_json()
-        vectorizer, scaler, logistic_model, ensemble_model = load_models()
-        features = preprocess_input(data, vectorizer, scaler)
-        if features is None:
-            return jsonify({"error": "Invalid input"}), 400
+        features = np.hstack([symptom_vec.toarray(), vital_vec])
 
         predictions = {}
         if logistic_model:
@@ -238,7 +207,6 @@ def predict():
 
         return jsonify({"result": predictions})
     except Exception as e:
-        print(f"❌ Prediction error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/treatment", methods=["POST"])
@@ -263,5 +231,5 @@ def ping_db():
         return jsonify({"error": f"MongoDB connection failed: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 7860))
     app.run(host='0.0.0.0', port=port)
