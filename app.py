@@ -1,6 +1,6 @@
 import os
-import joblib
 import numpy as np
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_mail import Mail, Message
@@ -10,7 +10,6 @@ from pathlib import Path
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
-from huggingface_hub import hf_hub_download
 
 # === Load Environment Variables ===
 env_path = Path(__file__).parent / '.env'
@@ -55,15 +54,11 @@ try:
     client = MongoClient(mongo_uri)
     db = client["medicalDB"]
     users = db["users"]
-    users.count_documents({})
+    users.count_documents({})  # test query
     print("✅ MongoDB connected and users collection loaded")
 except Exception as e:
     print(f"❌ MongoDB collection access failed: {e}")
     users = None
-
-@app.route("/")
-def home():
-    return "✅ Medica backend running on Hugging Face Spaces"
 
 @app.route("/api/debug", methods=["GET"])
 def debug_info():
@@ -101,6 +96,8 @@ def register():
         email = data.get("email")
         password = data.get("password")
 
+        print(f"📅 Received registration request: email={email}")
+
         if not email or not password:
             return jsonify({"message": "Missing email or password"}), 400
 
@@ -111,6 +108,7 @@ def register():
         users.insert_one({"email": email, "password": hashed_password})
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
+        print(f"🔥 Exception in /api/register: {e}")
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 @app.route("/api/login-step1", methods=["POST"])
@@ -119,6 +117,9 @@ def login_step1():
         data = request.get_json(force=True)
         email = data.get("email")
         password = data.get("password")
+
+        if not email or not password:
+            return jsonify({"message": "Email and password required"}), 400
 
         user = users.find_one({"email": email})
         if not user or not check_password_hash(user["password"], password):
@@ -135,6 +136,7 @@ def login_step1():
         send_verification_email(email, code)
         return jsonify({"message": "Verification code sent", "step": 2}), 200
     except Exception as e:
+        print("🔥 Exception occurred in login-step1:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 @app.route("/api/login-step2", methods=["POST"])
@@ -153,60 +155,19 @@ def login_step2():
         users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
         return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
     except Exception as e:
+        print("🔥 Exception in login-step2:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
-# === Load models from Hugging Face ===
-os.environ["HF_HOME"] = "/tmp"
-
-def load_model_from_hub(filename):
-    print(f"📅 Loading {filename}...")
-    path = hf_hub_download(repo_id="Sampath563/medica-model", filename=filename, cache_dir="/tmp")
-    model = joblib.load(path)
-    print(f"✅ Loaded {filename}")
-    return model
-
-vectorizer = load_model_from_hub("symptom_vectorizer.pkl")
-scaler = load_model_from_hub("medical_scaler.pkl")
-logistic_model = load_model_from_hub("best_medical_model_logistic_regression.pkl")
-ensemble_model = load_model_from_hub("ensemble_medical_model.pkl")
-
+# === PROXY PREDICTION TO HUGGING FACE ===
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
         data = request.get_json()
-        symptoms = data.get("symptoms", "")
-        bp = data.get("blood_pressure", "0/0")
-        try:
-            sys, dia = map(int, bp.split("/"))
-            bp_avg = (sys + dia) / 2
-        except:
-            bp_avg = 0
-
-        vitals = [
-            bp_avg,
-            float(data.get("heart_rate", 0)),
-            float(data.get("age", 0)),
-            float(data.get("temperature", 0)),
-            float(data.get("oxygen_saturation", 0))
-        ]
-
-        symptom_vec = vectorizer.transform([symptoms])
-        vital_vec = scaler.transform([vitals])
-        features = np.hstack([symptom_vec.toarray(), vital_vec])
-
-        predictions = {}
-        if logistic_model:
-            pred = logistic_model.predict(features)[0]
-            prob = np.max(logistic_model.predict_proba(features))
-            predictions["logistic"] = {"prediction": pred, "confidence": float(prob)}
-
-        if ensemble_model:
-            pred = ensemble_model.predict(features)[0]
-            prob = np.max(ensemble_model.predict_proba(features))
-            predictions["ensemble"] = {"prediction": pred, "confidence": float(prob)}
-
-        return jsonify({"result": predictions})
+        hf_url = "https://sampath563-medica-backend.hf.space/predict"
+        response = requests.post(hf_url, json=data)
+        return jsonify(response.json()), response.status_code
     except Exception as e:
+        print(f"❌ Proxy prediction error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/treatment", methods=["POST"])
@@ -231,5 +192,5 @@ def ping_db():
         return jsonify({"error": f"MongoDB connection failed: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 7860))
+    port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
