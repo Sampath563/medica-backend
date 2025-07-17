@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import requests
+import random
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_mail import Mail, Message
@@ -19,7 +20,7 @@ load_dotenv(dotenv_path=env_path)
 # === Flask Setup ===
 app = Flask(__name__)
 
-# ✅ Enable CORS for Netlify frontend
+# === Enable CORS for frontend ===
 CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}},
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"])
@@ -55,23 +56,13 @@ try:
     client = MongoClient(mongo_uri)
     db = client["medicalDB"]
     users = db["users"]
-    users.count_documents({})  # test query
+    users.count_documents({})
     print("✅ MongoDB connected and users collection loaded")
 except Exception as e:
-    print(f"❌ MongoDB collection access failed: {e}")
+    print(f"❌ MongoDB connection failed: {e}")
     users = None
 
-@app.route("/api/debug", methods=["GET"])
-def debug_info():
-    return jsonify({
-        "mongo_uri_loaded": mongo_uri is not None,
-        "users_collection_connected": users is not None
-    })
-
-# === Email Auth ===
-def generate_code():
-    return str(np.random.randint(100000, 999999))
-
+# === Utility: Send Email ===
 def send_verification_email(email, code):
     try:
         msg = Message("Your Verification Code", sender=gmail_user, recipients=[email])
@@ -82,14 +73,7 @@ def send_verification_email(email, code):
         print(f"❌ Email failed: {e}")
         raise
 
-@app.route("/api/test-email", methods=["GET"])
-def test_email():
-    try:
-        send_verification_email("bsampath563@gmail.com", "999999")
-        return jsonify({"message": "Test email sent ✅"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+# === Register Endpoint ===
 @app.route("/api/register", methods=["POST"])
 def register():
     try:
@@ -97,8 +81,7 @@ def register():
         email = data.get("email")
         password = data.get("password")
 
-        print(f"📅 Received registration request: email={email}")
-
+        print(f"📅 Registration request: {email}")
         if not email or not password:
             return jsonify({"message": "Missing email or password"}), 400
 
@@ -106,12 +89,13 @@ def register():
             return jsonify({"message": "User already exists"}), 400
 
         hashed_password = generate_password_hash(password)
-        users.insert_one({"email": email, "password": hashed_password})
+        users.insert_one({"email": email, "password": hashed_password, "is_verified": False})
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
-        print(f"🔥 Exception in /api/register: {e}")
+        print("🔥 Exception in /api/register:", e)
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
+# === Login Step 1 ===
 @app.route("/api/login-step1", methods=["POST"])
 def login_step1():
     try:
@@ -123,11 +107,10 @@ def login_step1():
         if not user or not check_password_hash(user["password"], password):
             return jsonify({"message": "Invalid credentials"}), 401
 
-        # ✅ If already verified, allow direct login
         if user.get("is_verified", False):
             return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
 
-        # ❌ Not verified yet – proceed to send verification code
+        # Send verification code if not yet verified
         code = str(random.randint(100000, 999999))
         expiry_time = datetime.utcnow() + timedelta(minutes=10)
         users.update_one(
@@ -135,27 +118,25 @@ def login_step1():
             {"$set": {"verification_code": code, "code_expiry": expiry_time}}
         )
         send_verification_email(email, code)
-
         return jsonify({"message": "Verification code sent", "step": 2}), 200
-
     except Exception as e:
         print("🔥 Exception in login-step1:", e)
         traceback.print_exc()
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
-
-
+# === Login Step 2 ===
 @app.route("/api/login-step2", methods=["POST"])
 def login_step2():
     try:
         data = request.get_json()
-        email, code = data.get("email"), data.get("code")
+        email = data.get("email")
+        code = data.get("code")
         user = users.find_one({"email": email})
 
         if not user:
             return jsonify({"message": "User not found"}), 404
 
-        if user.get("is_verified"):  # Already verified earlier
+        if user.get("is_verified"):
             return jsonify({"message": "Already verified", "token": "dummy_token"}), 200
 
         if user.get("verification_code") != code:
@@ -168,14 +149,12 @@ def login_step2():
             {"email": email},
             {"$set": {"is_verified": True}, "$unset": {"verification_code": "", "code_expiry": ""}}
         )
-
         return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
     except Exception as e:
         print("🔥 Exception in login-step2:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
-
-# === PROXY PREDICTION TO HUGGING FACE ===
+# === Predict Endpoint (Proxy to Hugging Face) ===
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
@@ -187,6 +166,7 @@ def predict():
         print(f"❌ Proxy prediction error: {e}")
         return jsonify({"error": str(e)}), 500
 
+# === Treatment Plan Generator ===
 @app.route("/api/treatment", methods=["POST"])
 def generate_treatment():
     try:
@@ -200,6 +180,14 @@ def generate_treatment():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# === Debug / Ping ===
+@app.route("/api/debug", methods=["GET"])
+def debug_info():
+    return jsonify({
+        "mongo_uri_loaded": mongo_uri is not None,
+        "users_collection_connected": users is not None
+    })
+
 @app.route("/api/ping-db", methods=["GET"])
 def ping_db():
     try:
@@ -208,6 +196,7 @@ def ping_db():
     except Exception as e:
         return jsonify({"error": f"MongoDB connection failed: {str(e)}"}), 500
 
+# === Main Entrypoint ===
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
