@@ -114,35 +114,32 @@ def register():
 @app.route("/api/login-step1", methods=["POST"])
 def login_step1():
     try:
-        data = request.get_json(force=True)
+        data = request.get_json()
         email = data.get("email")
         password = data.get("password")
-
-        if not email or not password:
-            return jsonify({"message": "Email and password required"}), 400
 
         user = users.find_one({"email": email})
         if not user or not check_password_hash(user["password"], password):
             return jsonify({"message": "Invalid credentials"}), 401
 
-        # ✅ If already verified, skip code
-        if user.get("verified"):
+        # ✅ If already verified, allow direct login
+        if user.get("is_verified", False):
             return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
 
-        # ⏳ Else, send code for first-time login
-        code = generate_code()
-        expiry = datetime.utcnow() + timedelta(minutes=5)
-
-        users.update_one({"email": email}, {"$set": {
-            "verification_code": code,
-            "code_expiry": expiry
-        }})
-
-        send_verification_email(email, code)
+        # ❌ Not verified yet – proceed to send verification code
+        code = str(random.randint(100000, 999999))
+        expiry_time = datetime.utcnow() + timedelta(minutes=10)
+        users.update_one(
+            {"email": email},
+            {"$set": {"verification_code": code, "code_expiry": expiry_time}}
+        )
+        send_email(email, "Your Verification Code", f"Your code is {code}")
         return jsonify({"message": "Verification code sent", "step": 2}), 200
+
     except Exception as e:
-        print("🔥 Exception occurred in login-step1:", e)
+        print("🔥 Exception in login-step1:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
+
 
 
 @app.route("/api/login-step2", methods=["POST"])
