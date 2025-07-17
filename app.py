@@ -21,13 +21,10 @@ load_dotenv(dotenv_path=env_path)
 app = Flask(__name__)
 
 # === Enable CORS for frontend ===
-CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}},
-     supports_credentials=True,
-     allow_headers=["Content-Type", "Authorization"])
+CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}}, supports_credentials=True)
 
 @app.after_request
 def after_request(response):
-    print("🔍 Response headers:", response.headers)
     return response
 
 @app.before_request
@@ -50,50 +47,38 @@ mail = Mail(app)
 
 # === MongoDB Setup ===
 mongo_uri = os.getenv("MONGO_URI")
-print("🔗 Connecting to MongoDB:", mongo_uri)
-
-try:
-    client = MongoClient(mongo_uri)
-    db = client["medicalDB"]
-    users = db["users"]
-    users.count_documents({})
-    print("✅ MongoDB connected and users collection loaded")
-except Exception as e:
-    print(f"❌ MongoDB connection failed: {e}")
-    users = None
+client = MongoClient(mongo_uri)
+db = client["medicalDB"]
+users = db["users"]
 
 # === Utility: Send Email ===
 def send_verification_email(email, code):
-    try:
-        msg = Message("Your Verification Code", sender=gmail_user, recipients=[email])
-        msg.body = f"Your verification code is: {code}"
-        mail.send(msg)
-        print(f"✅ Email sent to {email} with code {code}")
-    except Exception as e:
-        print(f"❌ Email failed: {e}")
-        raise
+    msg = Message("Your Verification Code", sender=gmail_user, recipients=[email])
+    msg.body = f"Your verification code is: {code}"
+    mail.send(msg)
+    print(f"✅ Email sent to {email} with code {code}")
 
 # === Register Endpoint ===
 @app.route("/api/register", methods=["POST"])
 def register():
-    try:
-        data = request.get_json(force=True)
-        email = data.get("email")
-        password = data.get("password")
+    data = request.get_json(force=True)
+    email = data.get("email")
+    password = data.get("password")
 
-        print(f"📅 Registration request: {email}")
-        if not email or not password:
-            return jsonify({"message": "Missing email or password"}), 400
+    if not email or not password:
+        return jsonify({"message": "Missing email or password"}), 400
 
-        if users.find_one({"email": email}):
-            return jsonify({"message": "User already exists"}), 400
+    if users.find_one({"email": email}):
+        return jsonify({"message": "User already exists"}), 400
 
-        hashed_password = generate_password_hash(password)
-        users.insert_one({"email": email, "password": hashed_password, "is_verified": False})
-        return jsonify({"message": "Registration successful"}), 201
-    except Exception as e:
-        print("🔥 Exception in /api/register:", e)
-        return jsonify({"message": "Registration failed", "error": str(e)}), 500
+    hashed_password = generate_password_hash(password)
+    users.insert_one({
+        "email": email,
+        "password": hashed_password,
+        "is_verified": False
+    })
+
+    return jsonify({"message": "Registration successful"}), 201
 
 # === Login Step 1 ===
 @app.route("/api/login-step1", methods=["POST"])
@@ -101,10 +86,8 @@ def login_step1():
     try:
         data = request.get_json()
         email, password = data.get("email"), data.get("password")
-        print(f"📨 Login attempt for: {email}")
 
         user = users.find_one({"email": email})
-        print("🔍 User found in DB:", user)
 
         if not user:
             return jsonify({"message": "User not found"}), 404
@@ -115,7 +98,7 @@ def login_step1():
         if user.get("is_verified", False):
             return jsonify({"token": "dummy_token"}), 200
 
-        # Generate and send code
+        # If not verified, send code
         verification_code = str(random.randint(100000, 999999))
         expiry = datetime.utcnow() + timedelta(minutes=10)
 
@@ -127,15 +110,12 @@ def login_step1():
             }}
         )
 
-        print(f"📧 Verification code sent: {verification_code}")
-        # send_email(email, verification_code)  # If you're using Flask-Mail
+        send_verification_email(email, verification_code)
 
         return jsonify({"step": 2, "message": "Verification code sent"}), 200
 
     except Exception as e:
-        print("🔥 ERROR in login-step1:", e)
-        return jsonify({"message": "Internal server error", "error": str(e)}), 500
-
+        return jsonify({"message": "Login step 1 failed", "error": str(e)}), 500
 
 # === Login Step 2 ===
 @app.route("/api/login-step2", methods=["POST"])
@@ -144,12 +124,13 @@ def login_step2():
         data = request.get_json()
         email = data.get("email")
         code = data.get("code")
+
         user = users.find_one({"email": email})
 
         if not user:
             return jsonify({"message": "User not found"}), 404
 
-        if user.get("is_verified"):
+        if user.get("is_verified", False):
             return jsonify({"message": "Already verified", "token": "dummy_token"}), 200
 
         if user.get("verification_code") != code:
@@ -162,12 +143,13 @@ def login_step2():
             {"email": email},
             {"$set": {"is_verified": True}, "$unset": {"verification_code": "", "code_expiry": ""}}
         )
-        return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
-    except Exception as e:
-        print("🔥 Exception in login-step2:", e)
-        return jsonify({"message": "Login failed", "error": str(e)}), 500
 
-# === Predict Endpoint (Proxy to Hugging Face) ===
+        return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
+
+    except Exception as e:
+        return jsonify({"message": "Login step 2 failed", "error": str(e)}), 500
+
+# === Proxy to Hugging Face for Prediction ===
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
@@ -176,7 +158,6 @@ def predict():
         response = requests.post(hf_url, json=data)
         return jsonify(response.json()), response.status_code
     except Exception as e:
-        print(f"❌ Proxy prediction error: {e}")
         return jsonify({"error": str(e)}), 500
 
 # === Treatment Plan Generator ===
@@ -193,14 +174,7 @@ def generate_treatment():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# === Debug / Ping ===
-@app.route("/api/debug", methods=["GET"])
-def debug_info():
-    return jsonify({
-        "mongo_uri_loaded": mongo_uri is not None,
-        "users_collection_connected": users is not None
-    })
-
+# === Health Check Endpoints ===
 @app.route("/api/ping-db", methods=["GET"])
 def ping_db():
     try:
