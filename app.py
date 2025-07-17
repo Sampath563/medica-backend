@@ -96,30 +96,45 @@ def register():
         return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 # === Login Step 1 ===
-@app.route('/api/login-step1', methods=['POST'])
+@app.route("/api/login-step1", methods=["POST"])
 def login_step1():
-    data = request.get_json()
-    email = data.get("email")
+    try:
+        data = request.get_json()
+        email, password = data.get("email"), data.get("password")
+        print(f"📨 Login attempt for: {email}")
 
-    if not email:
-        return jsonify({"message": "Email is required"}), 400
+        user = users.find_one({"email": email})
+        print("🔍 User found in DB:", user)
 
-    user = users.find_one({"email": email})
+        if not user:
+            return jsonify({"message": "User not found"}), 404
 
-    if user:
+        if not check_password_hash(user["password"], password):
+            return jsonify({"message": "Invalid password"}), 401
+
         if user.get("is_verified", False):
-            # ✅ Already verified, send token immediately
-            return jsonify({"token": "dummy_token", "message": "Already verified!"}), 200
-    else:
-        users.insert_one({"email": email, "password": password, "is_verified": False})
+            return jsonify({"token": "dummy_token"}), 200
 
+        # Generate and send code
+        verification_code = str(random.randint(100000, 999999))
+        expiry = datetime.utcnow() + timedelta(minutes=10)
 
-    code = str(random.randint(100000, 999999))
-    expiry = datetime.utcnow() + timedelta(minutes=10)
-    users.update_one({"email": email}, {"$set": {"verification_code": code, "code_expiry": expiry}})
+        users.update_one(
+            {"email": email},
+            {"$set": {
+                "verification_code": verification_code,
+                "code_expiry": expiry
+            }}
+        )
 
-    send_email(email, "Your Medica verification code", f"Your code is: {code}")
-    return jsonify({"message": "Verification code sent to email"}), 200
+        print(f"📧 Verification code sent: {verification_code}")
+        # send_email(email, verification_code)  # If you're using Flask-Mail
+
+        return jsonify({"step": 2, "message": "Verification code sent"}), 200
+
+    except Exception as e:
+        print("🔥 ERROR in login-step1:", e)
+        return jsonify({"message": "Internal server error", "error": str(e)}), 500
 
 
 # === Login Step 2 ===
