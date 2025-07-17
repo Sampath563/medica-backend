@@ -133,7 +133,8 @@ def login_step1():
             {"email": email},
             {"$set": {"verification_code": code, "code_expiry": expiry_time}}
         )
-        send_email(email, "Your Verification Code", f"Your code is {code}")
+        send_verification_email(email, code)
+
         return jsonify({"message": "Verification code sent", "step": 2}), 200
 
     except Exception as e:
