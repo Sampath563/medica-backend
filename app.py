@@ -105,11 +105,14 @@ def login_step1():
         return jsonify({"message": "Email is required"}), 400
 
     user = users.find_one({"email": email})
+
     if user:
         if user.get("is_verified", False):
-            return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
+            # ✅ Already verified, send token immediately
+            return jsonify({"token": "dummy_token", "message": "Already verified!"}), 200
     else:
-        users.insert_one({"email": email, "is_verified": False})
+        users.insert_one({"email": email, "password": password, "is_verified": False})
+
 
     code = str(random.randint(100000, 999999))
     expiry = datetime.utcnow() + timedelta(minutes=10)
