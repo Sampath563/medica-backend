@@ -140,9 +140,12 @@ def login_step2():
             return jsonify({"message": "Code expired"}), 401
 
         users.update_one(
-            {"email": email},
-            {"$set": {"is_verified": True}, "$unset": {"verification_code": "", "code_expiry": ""}}
-        )
+                {"email": email},
+                {
+                    "$unset": {"verification_code": "", "code_expiry": ""},
+                    "$set": {"is_verified": True}  # ✅ Mark user as verified
+                }
+            )
 
         return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
 
