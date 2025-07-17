@@ -7,6 +7,7 @@ from flask_mail import Mail, Message
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from pathlib import Path
+import traceback
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from serpapi_util import fetch_search_results
@@ -139,6 +140,7 @@ def login_step1():
 
     except Exception as e:
         print("🔥 Exception in login-step1:", e)
+        traceback.print_exc()
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 
