@@ -32,28 +32,6 @@ CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlif
 client = MongoClient("mongodb+srv://bsampath563:your_password@cluster3.d62mpwa.mongodb.net/")
 db = client["medica"]  # Replace with your actual DB name
 feedback_collection = db["feedbacks"]  
-
-@app.route('/api/feedback', methods=['POST'])
-def submit_feedback():
-    try:
-        data = request.get_json()
-        name = data.get('name')
-        email = data.get('email')
-        message = data.get('message')
-
-        if not name or not email or not message:
-            return jsonify({"success": False, "error": "Missing fields"}), 400
-
-        feedback_collection.insert_one({
-            "name": name,
-            "email": email,
-            "message": message
-        })
-
-        return jsonify({"success": True, "message": "Feedback received"}), 200
-
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
     
 
 @app.after_request
@@ -241,6 +219,30 @@ def store_feedback():
         return jsonify({'success': True, 'message': 'Feedback submitted successfully'})
     except Exception as e:
         return jsonify({'error': 'Failed to store feedback', 'details': str(e)}), 500
+
+@app.route('/api/feedback', methods=['POST'])
+def submit_feedback():
+    try:
+        data = request.json
+        email = data.get("email", "anonymous")
+        message = data.get("message", "")
+        timestamp = datetime.utcnow()
+
+        if not message:
+            return jsonify({"success": False, "message": "Feedback message is required"}), 400
+
+        feedback = {
+            "email": email,
+            "message": message,
+            "timestamp": timestamp
+        }
+
+        db.feedback.insert_one(feedback)
+        return jsonify({"success": True, "message": "Feedback submitted successfully"}), 200
+
+    except Exception as e:
+        print("Error saving feedback:", e)
+        return jsonify({"success": False, "message": "Internal Server Error"}), 500
 
 # === Main Entrypoint ===
 if __name__ == '__main__':
