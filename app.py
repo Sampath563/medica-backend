@@ -125,6 +125,11 @@ def login_step1():
         if not user or not check_password_hash(user["password"], password):
             return jsonify({"message": "Invalid credentials"}), 401
 
+        # ✅ If already verified, skip code
+        if user.get("verified"):
+            return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
+
+        # ⏳ Else, send code for first-time login
         code = generate_code()
         expiry = datetime.utcnow() + timedelta(minutes=5)
 
@@ -139,6 +144,7 @@ def login_step1():
         print("🔥 Exception occurred in login-step1:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
 
+
 @app.route("/api/login-step2", methods=["POST"])
 def login_step2():
     try:
@@ -146,17 +152,28 @@ def login_step2():
         email, code = data.get("email"), data.get("code")
         user = users.find_one({"email": email})
 
-        if not user or user.get("verification_code") != code:
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+
+        if user.get("is_verified"):  # Already verified earlier
+            return jsonify({"message": "Already verified", "token": "dummy_token"}), 200
+
+        if user.get("verification_code") != code:
             return jsonify({"message": "Invalid verification code"}), 401
 
         if datetime.utcnow() > user.get("code_expiry"):
             return jsonify({"message": "Code expired"}), 401
 
-        users.update_one({"email": email}, {"$unset": {"verification_code": "", "code_expiry": ""}})
+        users.update_one(
+            {"email": email},
+            {"$set": {"is_verified": True}, "$unset": {"verification_code": "", "code_expiry": ""}}
+        )
+
         return jsonify({"message": "Login successful", "token": "dummy_token"}), 200
     except Exception as e:
         print("🔥 Exception in login-step2:", e)
         return jsonify({"message": "Login failed", "error": str(e)}), 500
+
 
 # === PROXY PREDICTION TO HUGGING FACE ===
 @app.route("/predict", methods=["POST"])
