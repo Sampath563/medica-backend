@@ -186,6 +186,29 @@ def ping_db():
     except Exception as e:
         return jsonify({"error": f"MongoDB connection failed: {str(e)}"}), 500
 
+@app.route('/api/feedback', methods=['POST'])
+def store_feedback():
+    data = request.json
+    name = data.get('name')
+    email = data.get('email')
+    message = data.get('message')
+    
+    if not name or not email or not message:
+        return jsonify({'error': 'Missing fields'}), 400
+
+    feedback_data = {
+        'name': name,
+        'email': email,
+        'message': message,
+        'timestamp': datetime.now()
+    }
+    
+    try:
+        db.feedback.insert_one(feedback_data)
+        return jsonify({'success': True, 'message': 'Feedback submitted successfully'})
+    except Exception as e:
+        return jsonify({'error': 'Failed to store feedback', 'details': str(e)}), 500
+
 # === Main Entrypoint ===
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
