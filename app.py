@@ -36,7 +36,12 @@ feedback_collection = db["feedbacks"]
 
 @app.after_request
 def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'https://dynamic-sunburst-5f73a6.netlify.app')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
     return response
+
 
 @app.before_request
 def log_request_info():
@@ -166,6 +171,8 @@ def login_step2():
 
 @app.route("/api/send-reset-code", methods=["POST"])
 def send_reset_code():
+    if request.method == 'OPTIONS':
+        return '', 200  # ✅ Respond to preflight
     try:
         data = request.get_json()
         email = data.get("email")
@@ -196,6 +203,8 @@ def send_reset_code():
 
 @app.route("/api/reset-password", methods=["POST"])
 def reset_password():
+    if request.method == 'OPTIONS':
+        return '', 200  # ✅ Respond to preflight
     try:
         data = request.get_json()
         email = data.get("email")
