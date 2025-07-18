@@ -26,17 +26,7 @@ load_dotenv(dotenv_path=env_path)
 app = Flask(__name__)
 
 # === Enable CORS for frontend ===
-CORS(app, origins=["https://dynamic-sunburst-5f73a6.netlify.app"])
-
-mongo_uri = os.getenv("MONGO_URI")
-client = MongoClient(mongo_uri)
-db = client["medicalDB"]
-feedback_collection = db["feedbacks"]   
-    
-
-@app.after_request
-def after_request(response):
-    return response
+CORS(app, origins=["https://dynamic-sunburst-5f73a6.netlify.app"], supports_credentials=True)
 
 
 @app.before_request
@@ -62,6 +52,7 @@ mongo_uri = os.getenv("MONGO_URI")
 client = MongoClient(mongo_uri)
 db = client["medicalDB"]
 users = db["users"]
+feedback_collection = db["feedbacks"]   
 
 # === Utility: Send Email ===
 def send_verification_email(email, code):
@@ -167,8 +158,6 @@ def login_step2():
 
 @app.route("/api/send-reset-code", methods=["POST"])
 def send_reset_code():
-    if request.method == 'OPTIONS':
-        return '', 200  # ✅ Respond to preflight
     try:
         data = request.get_json()
         email = data.get("email")
@@ -199,8 +188,7 @@ def send_reset_code():
 
 @app.route("/api/reset-password", methods=["POST"])
 def reset_password():
-    if request.method == 'OPTIONS':
-        return '', 200  # ✅ Respond to preflight
+    
     try:
         data = request.get_json()
         email = data.get("email")
