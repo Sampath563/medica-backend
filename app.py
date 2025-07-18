@@ -163,6 +163,69 @@ def login_step2():
     except Exception as e:
         return jsonify({"message": "Login step 2 failed", "error": str(e)}), 500
 
+
+@app.route("/api/send-reset-code", methods=["POST"])
+def send_reset_code():
+    try:
+        data = request.get_json()
+        email = data.get("email")
+
+        user = users.find_one({"email": email})
+        if not user:
+            return jsonify({"message": "Email not found"}), 404
+
+        reset_code = str(random.randint(100000, 999999))
+        expiry = datetime.utcnow() + timedelta(minutes=10)
+
+        users.update_one(
+            {"email": email},
+            {"$set": {
+                "reset_code": reset_code,
+                "reset_expiry": expiry
+            }}
+        )
+
+        msg = Message("Password Reset Code", sender=gmail_user, recipients=[email])
+        msg.body = f"Your password reset code is: {reset_code}"
+        mail.send(msg)
+
+        return jsonify({"message": "Reset code sent"}), 200
+
+    except Exception as e:
+        return jsonify({"message": "Failed to send reset code", "error": str(e)}), 500
+
+@app.route("/api/reset-password", methods=["POST"])
+def reset_password():
+    try:
+        data = request.get_json()
+        email = data.get("email")
+        code = data.get("code")
+        new_password = data.get("newPassword")
+
+        user = users.find_one({"email": email})
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+
+        if user.get("reset_code") != code:
+            return jsonify({"message": "Invalid reset code"}), 401
+
+        if datetime.utcnow() > user.get("reset_expiry"):
+            return jsonify({"message": "Reset code expired"}), 401
+
+        hashed_password = generate_password_hash(new_password)
+        users.update_one(
+            {"email": email},
+            {
+                "$set": {"password": hashed_password},
+                "$unset": {"reset_code": "", "reset_expiry": ""}
+            }
+        )
+
+        return jsonify({"message": "Password reset successful"}), 200
+
+    except Exception as e:
+        return jsonify({"message": "Failed to reset password", "error": str(e)}), 500
+
 # === Proxy to Hugging Face for Prediction ===
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -220,7 +283,7 @@ def store_feedback():
     except Exception as e:
         return jsonify({'error': 'Failed to store feedback', 'details': str(e)}), 500
 
-@app.route('/api/feedback', methods=['POST'])
+@app.route("/api/submit-feedback", methods=["POST"])
 def submit_feedback():
     try:
         data = request.json
