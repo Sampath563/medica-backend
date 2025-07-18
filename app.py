@@ -26,20 +26,16 @@ load_dotenv(dotenv_path=env_path)
 app = Flask(__name__)
 
 # === Enable CORS for frontend ===
-CORS(app, resources={r"/.*": {"origins": "https://dynamic-sunburst-5f73a6.netlify.app"}}, supports_credentials=True)
+CORS(app, origins=["https://dynamic-sunburst-5f73a6.netlify.app"])
 
-
-client = MongoClient("mongodb+srv://bsampath563:your_password@cluster3.d62mpwa.mongodb.net/")
-db = client["medica"]  # Replace with your actual DB name
-feedback_collection = db["feedbacks"]  
+mongo_uri = os.getenv("MONGO_URI")
+client = MongoClient(mongo_uri)
+db = client["medicalDB"]
+feedback_collection = db["feedbacks"]   
     
 
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', 'https://dynamic-sunburst-5f73a6.netlify.app')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
     return response
 
 
