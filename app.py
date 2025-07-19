@@ -224,6 +224,14 @@ def reset_password():
 def predict():
     try:
         data = request.get_json()
+
+        # Check if "use_huggingface" flag is sent in request
+        if data.get("use_huggingface"):
+            hf_url = "https://sampath563-medica-backend.hf.space/predict"
+            response = requests.post(hf_url, json=data)
+            return jsonify(response.json()), response.status_code
+
+        # Else use local model
         features = preprocess_input(data)
         if features is None:
             return jsonify({"error": "Invalid input"}), 400
@@ -233,18 +241,18 @@ def predict():
         # LOGISTIC MODEL
         if 'logistic' in models:
             probs = models['logistic'].predict_proba(features)[0]
-            top_indices = np.argsort(probs)[-5:][::-1]  # Get top 5
+            top_indices = np.argsort(probs)[-5:][::-1]
             top_preds = [
                 {"disease": models['logistic'].classes_[i], "confidence": float(probs[i])}
                 for i in top_indices
             ]
             predictions['logistic'] = {
-                "prediction": top_preds[0]["disease"],       # top-1 prediction
-                "confidence": top_preds[0]["confidence"],     # top-1 confidence
-                "top_predictions": top_preds                  # full top-5 list
+                "prediction": top_preds[0]["disease"],
+                "confidence": top_preds[0]["confidence"],
+                "top_predictions": top_preds
             }
 
-        # ENSEMBLE MODEL (optional)
+        # ENSEMBLE MODEL
         if 'ensemble' in models:
             probs = models['ensemble'].predict_proba(features)[0]
             top_indices = np.argsort(probs)[-5:][::-1]
@@ -259,9 +267,11 @@ def predict():
             }
 
         return jsonify({"result": predictions})
+
     except Exception as e:
         print("❌ Prediction error:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 # === Treatment Plan Generator ===
 @app.route("/api/treatment", methods=["POST"])
