@@ -225,51 +225,13 @@ def predict():
     try:
         data = request.get_json()
 
-        # Check if "use_huggingface" flag is sent in request
-        if data.get("use_huggingface"):
-            hf_url = "https://sampath563-medica-backend.hf.space/predict"
-            response = requests.post(hf_url, json=data)
-            return jsonify(response.json()), response.status_code
-
-        # Else use local model
-        features = preprocess_input(data)
-        if features is None:
-            return jsonify({"error": "Invalid input"}), 400
-
-        predictions = {}
-
-        # LOGISTIC MODEL
-        if 'logistic' in models:
-            probs = models['logistic'].predict_proba(features)[0]
-            top_indices = np.argsort(probs)[-5:][::-1]
-            top_preds = [
-                {"disease": models['logistic'].classes_[i], "confidence": float(probs[i])}
-                for i in top_indices
-            ]
-            predictions['logistic'] = {
-                "prediction": top_preds[0]["disease"],
-                "confidence": top_preds[0]["confidence"],
-                "top_predictions": top_preds
-            }
-
-        # ENSEMBLE MODEL
-        if 'ensemble' in models:
-            probs = models['ensemble'].predict_proba(features)[0]
-            top_indices = np.argsort(probs)[-5:][::-1]
-            top_preds = [
-                {"disease": models['ensemble'].classes_[i], "confidence": float(probs[i])}
-                for i in top_indices
-            ]
-            predictions['ensemble'] = {
-                "prediction": top_preds[0]["disease"],
-                "confidence": top_preds[0]["confidence"],
-                "top_predictions": top_preds
-            }
-
-        return jsonify({"result": predictions})
+        # Always forward to Hugging Face model
+        hf_url = "https://sampath563-medica-backend.hf.space/predict"
+        response = requests.post(hf_url, json=data)
+        return jsonify(response.json()), response.status_code
 
     except Exception as e:
-        print("❌ Prediction error:", str(e))
+        print("❌ Hugging Face proxy error:", str(e))
         return jsonify({"error": str(e)}), 500
 
 
